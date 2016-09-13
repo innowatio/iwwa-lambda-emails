@@ -1,39 +1,151 @@
-import "babel-polyfill";
-
 import chai, {expect} from "chai";
-import {spy} from "sinon";
+import chaiAsPromised from "chai-as-promised";
+import sinon from "sinon";
 import sinonChai from "sinon-chai";
+import {resolve, reject} from "bluebird";
 
+chai.use(chaiAsPromised);
 chai.use(sinonChai);
 
-import {getEventFromObject} from "../mocks";
 import {handler} from "index";
+import pipeline from "pipeline";
+import {getEventFromObject, run} from "../mock";
 
-describe("Send email", () => {
-    // TODO complete the unit test!!
+describe("`On sending email`", () => {
 
-    let context = {
-        succeed: spy(),
-        fail: spy()
+    const log = {
+        info: sinon.spy(),
+        debug: sinon.spy(),
+        error: sinon.spy()
     };
 
-    beforeEach(async () => {
-        context.succeed.reset();
-        context.fail.reset();
+    before(async () => {
+        pipeline.__Rewire__("log", log);
     });
 
-    it("Never fail", async () => {
+    after(async () => {
+        pipeline.__ResetDependency__("log");
+    });
 
-        const userEvent = {
-            data: {
-                toAddresses: "john@doe.com",
-                mailContent: "Just an example text.",
-                mailSubject: "Just an example subject."
-            },
-            type: "email sent"
+    beforeEach(async () => {
+        log.info.reset();
+        log.debug.reset();
+        log.error.reset();
+    });
+
+    const getEvent = element => ({
+        id: "eventId",
+        data: {
+            element,
+            id: "d0f7c9b4-ef6b-45c8-b216-723e78a6fe72"
+        },
+        type: "element inserted in collection emails"
+    });
+
+    describe("on promise resolved", () => {
+
+        const ses = {
+            sendEmail: sinon.stub().returns({promise: resolve})
         };
 
-        await handler(getEventFromObject(userEvent), context);
-        expect(context.succeed).to.have.been.calledOnce;
+        before(async () => {
+            pipeline.__Rewire__("ses", ses);
+        });
+
+        after(async () => {
+            pipeline.__ResetDependency__("ses");
+        });
+
+        it("Send mail with exisisting address", async () => {
+
+            var element = {
+                toAddresses: ["test@email.com"],
+                message: "test",
+                subject: "test",
+
+            };
+
+            var sesElement = {
+                Destination: {
+                    ToAddresses: ["test@email.com"]
+                },
+                Message: {
+                    Body: {
+                        Text: {
+                            Data: "test"
+                        }
+                    },
+                    Subject: {
+                        Data: "test"
+                    }
+                },
+                Source: "noreply@innowatio.it"
+            };
+
+            const event = getEventFromObject(getEvent(element));
+            await run(handler, event);
+            expect(ses.sendEmail).to.have.callCount(1);
+            expect(ses.sendEmail).to.have.been.calledWithExactly(sesElement);
+
+            return ses.sendEmail().promise().delay(1000).then(() => {
+                expect(log.info).to.have.callCount(1);
+                expect(log.debug).to.have.callCount(2);
+            });
+        });
+
+    });
+
+    describe("on promise rejected", () => {
+
+        const ses = {
+            sendEmail: sinon.stub().returns({
+                promise: () => reject(Error("error"))
+            })
+        };
+
+        before(async () => {
+            pipeline.__Rewire__("ses", ses);
+        });
+
+        after(async () => {
+            pipeline.__ResetDependency__("ses");
+        });
+
+        it("Send mail with exisisting address", async () => {
+
+            var element = {
+                toAddresses: ["test@email.com"],
+                message: "test",
+                subject: "test",
+
+            };
+
+            var sesElement = {
+                Destination: {
+                    ToAddresses: ["test@email.com"]
+                },
+                Message: {
+                    Body: {
+                        Text: {
+                            Data: "test"
+                        }
+                    },
+                    Subject: {
+                        Data: "test"
+                    }
+                },
+                Source: "noreply@innowatio.it"
+            };
+
+            const event = getEventFromObject(getEvent(element));
+            await run(handler, event);
+            expect(ses.sendEmail).to.have.callCount(1);
+            expect(ses.sendEmail).to.have.been.calledWithExactly(sesElement);
+
+            return ses.sendEmail().promise().delay(1000).catch(() => {
+                expect(log.error).to.have.callCount(1);
+            });
+        });
+
     });
 });

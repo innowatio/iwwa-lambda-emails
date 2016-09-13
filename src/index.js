@@ -1,7 +1,7 @@
 import "babel-polyfill";
 import router from "kinesis-router";
 
-import sendEmail from "services/mail-sender";
+import pipeline from "pipeline";
 
 export const handler = router()
-    .on("email sent", sendEmail);
+    .on("element inserted in collection emails", pipeline);
